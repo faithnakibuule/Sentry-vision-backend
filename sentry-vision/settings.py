@@ -2,17 +2,26 @@
 Django settings for SENTRY-VISION project.
 Embedded multi-modal surveillance backend (ESP32-CAM + RUView radar).
 """
-import os
 from pathlib import Path
+
+import environ
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = "dev-only-change-me-in-production"
+# All environment-specific values (secrets, debug flag, hosts) live in
+# .env, NOT in this file. .env is git-ignored; .env.example documents the
+# expected keys with safe placeholder values for teammates/deployment.
+env = environ.Env(
+    DEBUG=(bool, False),
+)
+environ.Env.read_env(BASE_DIR / ".env")
 
-# ESP32-CAM and radar nodes will be on the LAN during dev, so DEBUG stays on
-# and ALLOWED_HOSTS is permissive. Lock this down before deploying.
-DEBUG = True
-ALLOWED_HOSTS = ["*"]
+SECRET_KEY = env("SECRET_KEY")
+
+# ESP32-CAM and radar nodes will be on the LAN during dev. Set DEBUG=True
+# and ALLOWED_HOSTS=* in your local .env; lock both down in production .env.
+DEBUG = env("DEBUG")
+ALLOWED_HOSTS = env.list("ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -73,7 +82,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "Africa/Kampala"
+TIME_ZONE = env("TIME_ZONE", default="Africa/Kampala")
 USE_I18N = True
 USE_TZ = True
 
@@ -111,8 +120,8 @@ REST_FRAMEWORK = {
 # Distance tolerance for face_recognition.compare_faces / face_distance.
 # Lower = stricter match. 0.6 is the library's own recommended default.
 # (Also mirrored in the SystemSettings DB row so it's editable from the
-# Settings page without a redeploy — see detection/models.py.)
-FACE_MATCH_TOLERANCE = 0.6
+# Settings page at runtime without touching .env — see detection/models.py.)
+FACE_MATCH_TOLERANCE = env.float("FACE_MATCH_TOLERANCE", default=0.6)
 
 # Channels — in-memory layer is fine for a single dev-server process.
 # For production (multiple workers, or Daphne behind nginx) swap this for
