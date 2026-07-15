@@ -4,7 +4,10 @@ import numpy as np
 
 
 def _load_image(image_source):
-    import face_recognition
+    try:
+        import face_recognition
+    except ImportError:
+        raise RuntimeError("face_recognition is not installed")
 
     if hasattr(image_source, "read"):
         try:
@@ -16,9 +19,16 @@ def _load_image(image_source):
 
 
 def get_face_encoding(image_source):
-    import face_recognition
+    try:
+        import face_recognition
+    except ImportError:
+        return None
 
-    image = _load_image(image_source)
+    try:
+        image = _load_image(image_source)
+    except RuntimeError:
+        return None
+
     locations = face_recognition.face_locations(image)
     if not locations:
         return None
@@ -29,7 +39,10 @@ def get_face_encoding(image_source):
 
 
 def compare_encoding(unknown_encoding, people, tolerance):
-    import face_recognition
+    try:
+        import face_recognition
+    except ImportError:
+        return None, None, None
 
     candidates = [(person, np.array(person.face_encoding)) for person in people if person.face_encoding]
     if not candidates:
