@@ -1,0 +1,32 @@
+import django.db.models.deletion
+import django.utils.timezone
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+    initial = True
+
+    dependencies = [
+        ("devices", "0001_initial"),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name="RadarReading",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("presence_detected", models.BooleanField(default=False)),
+                ("heart_rate_bpm", models.PositiveIntegerField(blank=True, null=True)),
+                ("height_estimate_cm", models.DecimalField(blank=True, decimal_places=2, max_digits=6, null=True)),
+                ("movement_pattern", models.CharField(blank=True, max_length=120)),
+                ("zone", models.CharField(db_index=True, max_length=80)),
+                ("timestamp", models.DateTimeField(db_index=True, default=django.utils.timezone.now)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("device", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="radar_readings", to="devices.device")),
+            ],
+            options={
+                "ordering": ("-timestamp",),
+                "indexes": [models.Index(fields=["zone", "timestamp"], name="radar_zone_timestamp_idx"), models.Index(fields=["device", "timestamp"], name="radar_device_timestamp_idx")],
+            },
+        ),
+    ]

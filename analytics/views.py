@@ -1,6 +1,7 @@
 from django.db.models import Avg, Count
 from django.db.models.functions import ExtractHour, TruncDate
 from django.utils import timezone
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -10,18 +11,32 @@ from detections.models import DetectionEvent, FacialMatchResult
 from radar.models import RadarReading
 
 
+def get_positive_int(query_params, name, default, maximum=None):
+    raw_value = query_params.get(name, default)
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        raise ValidationError({name: "Must be a valid integer."})
+    if value < 1:
+        raise ValidationError({name: "Must be greater than zero."})
+    if maximum is not None:
+        value = min(value, maximum)
+    return value
+
+
 class AnalyticsSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        days = int(request.query_params.get("days", 7))
+        days = get_positive_int(request.query_params, "days", 7, maximum=365)
         since = timezone.now() - timezone.timedelta(days=days)
         detections = DetectionEvent.objects.filter(timestamp__gte=since)
         matches = FacialMatchResult.objects.filter(detection__timestamp__gte=since)
 
         matched_count = matches.filter(status=FacialMatchResult.Status.MATCHED).count()
         unmatched_count = matches.filter(status=FacialMatchResult.Status.UNMATCHED).count()
-        false_positive_rate = unmatched_count / matched_count if matched_count else None
+        completed_matches = matched_count + unmatched_count
+        false_positive_rate = unmatched_count / completed_matches if completed_matches else None
 
         return Response(
             {
@@ -62,8 +77,8 @@ class SensorCorrelationView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        seconds = int(request.query_params.get("window_seconds", 5))
-        limit = int(request.query_params.get("limit", 50))
+        seconds = get_positive_int(request.query_params, "window_seconds", 5, maximum=3600)
+        limit = get_positive_int(request.query_params, "limit", 50, maximum=500)
         rows = []
         for detection in DetectionEvent.objects.select_related("device").order_by("-timestamp")[:limit]:
             start = detection.timestamp - timezone.timedelta(seconds=seconds)
