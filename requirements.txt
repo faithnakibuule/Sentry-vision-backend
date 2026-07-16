@@ -7,3 +7,7 @@ dlib-bin>=19.24
 opencv-python-headless>=4.8
 numpy>=1.24
 Pillow>=10.0
+
+psycopg2-binary>=2.9
+python-decouple>=3.8
+imagekitio>=3.0
