@@ -1,6 +1,7 @@
 import os
 from datetime import timedelta
 from pathlib import Path
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -66,6 +67,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -94,11 +96,23 @@ TEMPLATES = [
     },
 ]
 
-DB_ENGINE = env("DB_ENGINE", "")
-if DB_ENGINE:
+
+DATABASE_URL = env("DATABASE_URL")
+
+if DATABASE_URL:
+    # Production: Uses the DATABASE_URL provided by Render / Railway
+    DATABASES = {
+        "default": dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=True
+        )
+    }
+elif env("DB_ENGINE"):
+    # Optional fallback for local custom Postgres
     DATABASES = {
         "default": {
-            "ENGINE": DB_ENGINE,
+            "ENGINE": env("DB_ENGINE"),
             "NAME": env("DB_NAME", "sentry_vision"),
             "USER": env("DB_USER", "postgres"),
             "PASSWORD": env("DB_PASSWORD", "postgres"),
@@ -107,6 +121,7 @@ if DB_ENGINE:
         }
     }
 else:
+    # Local fallback: SQLite
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -127,13 +142,14 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
-MEDIA_URL = "/media/"
+STATIC_ROOT = BASE_DIR / "staticfiles"  
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 CORS_ALLOWED_ORIGINS = env_list(
     "CORS_ALLOWED_ORIGINS",
     [
+        os.environ.get('FRONTEND_URL','http://localhost:5173'),
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
@@ -177,3 +193,4 @@ CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", False)
 FACE_MATCH_TOLERANCE = float(env("FACE_MATCH_TOLERANCE", 0.6))
 SUSPICIOUS_WINDOW_SECONDS = int(env("SUSPICIOUS_WINDOW_SECONDS", 60))
 SUSPICIOUS_DETECTION_COUNT = int(env("SUSPICIOUS_DETECTION_COUNT", 3))
+

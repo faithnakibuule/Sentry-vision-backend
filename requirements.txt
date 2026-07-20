@@ -13,3 +13,6 @@ dlib>=19.24
 opencv-python-headless>=4.8
 numpy>=1.24
 Pillow>=10.0
+gunicorn>=21.0
+dj-database-url>=1.0
+
