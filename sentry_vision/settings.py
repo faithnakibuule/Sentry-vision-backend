@@ -194,3 +194,18 @@ FACE_MATCH_TOLERANCE = float(env("FACE_MATCH_TOLERANCE", 0.6))
 SUSPICIOUS_WINDOW_SECONDS = int(env("SUSPICIOUS_WINDOW_SECONDS", 60))
 SUSPICIOUS_DETECTION_COUNT = int(env("SUSPICIOUS_DETECTION_COUNT", 3))
 
+<<<<<<< HEAD
+=======
+IMAGEKIT_PUBLIC_KEY = env("IMAGEKIT_PUBLIC_KEY")
+IMAGEKIT_PRIVATE_KEY = env("IMAGEKIT_PRIVATE_KEY")
+IMAGEKIT_URL_ENDPOINT = env("IMAGEKIT_URL_ENDPOINT")
+
+STORAGES = {
+    "default": {
+        "BACKEND": "sentry_vision.storage_backends.ImageKitStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+>>>>>>> faith
