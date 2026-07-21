@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import include, path
 from django.http import JsonResponse
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -8,7 +9,16 @@ def health_check(request):
 
 from sentry_vision.views import AuthenticatedMediaView
 
+
+def home(request):
+    return JsonResponse({
+        "status": "ok",
+        "service": "Sentry Vision backend",
+        "api_root": "/api/",
+    })
+
 urlpatterns = [
+    path("", home),
     path("admin/", admin.site.urls),
     path("health/", health_check),
     path("api/", include("accounts.urls")),
