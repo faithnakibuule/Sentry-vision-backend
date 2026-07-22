@@ -40,7 +40,8 @@ def env_list(name, default=None):
 
 SECRET_KEY = env("SECRET_KEY", "dev-only-change-me")
 DEBUG = env_bool("DEBUG", True)
-ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", ["localhost", "127.0.0.1"])
+ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", 
+                         default = ["https://sentry-vision-backend.onrender.com", "localhost", "127.0.0.1"])
 
 INSTALLED_APPS = [
     "daphne",
@@ -154,9 +155,11 @@ CORS_ALLOWED_ORIGINS = env_list(
         "http://127.0.0.1:3000",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "https://sentry-vision-web.vercel.app",
     ],
 )
 CORS_ALLOW_CREDENTIALS = True
+
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
