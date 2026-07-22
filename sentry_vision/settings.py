@@ -42,6 +42,8 @@ SECRET_KEY = env("SECRET_KEY", "dev-only-change-me")
 DEBUG = env_bool("DEBUG", True)
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", 
                          default = ["https://sentry-vision-backend.onrender.com", "localhost", "127.0.0.1"])
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 INSTALLED_APPS = [
     "daphne",
@@ -63,6 +65,7 @@ INSTALLED_APPS = [
     "radar.apps.RadarConfig",
     "analytics.apps.AnalyticsConfig",
     "logs.apps.LogsConfig",
+    "api",
 ]
 
 MIDDLEWARE = [
