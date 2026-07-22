@@ -33,9 +33,9 @@ urlpatterns = [
     path("api/", include("radar.urls")),
     path("api/", include("analytics.urls")),
     path("api/", include("logs.urls")),
+    path('api/', include('api.urls')),
     path('upload_live', views.upload_live, name='upload_live_direct'),
     path('upload_live/', views.upload_live, name='upload_live_direct_slash'),
-    path('api/', include('api.urls')),
 ]
 # Serve media files (uploaded JPEG snapshots) during development
 if settings.DEBUG:
