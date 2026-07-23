@@ -65,9 +65,12 @@ CSRF_TRUSTED_ORIGINS = env_list(
 
 # Render terminates HTTPS at its proxy and forwards internally as HTTP.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+<<<<<<< HEAD
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+=======
+>>>>>>> 751a09764244a3d2afe95845b78ad20cd4136622
 
 INSTALLED_APPS = [
     "daphne",
@@ -186,6 +189,12 @@ CORS_ALLOWED_ORIGINS = env_list(
     ],
 )
 CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://sentry-vision-backend.onrender.com",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
 
 
 REST_FRAMEWORK = {
