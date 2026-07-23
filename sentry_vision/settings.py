@@ -39,9 +39,38 @@ def env_list(name, default=None):
 
 
 SECRET_KEY = env("SECRET_KEY", "dev-only-change-me")
+<<<<<<< HEAD
 DEBUG = env_bool("DEBUG", True)
 ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", 
-                         default = ["https://sentry-vision-backend.onrender.com", "localhost", "127.0.0.1"])
+                         default = ["https://sentry-vision-backend.onrender.com", "192.168.8.108", "localhost", "127.0.0.1"])
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+=======
+
+# NOTE: set DEBUG=False explicitly in Render's environment variables for production.
+DEBUG = env_bool("DEBUG", False)
+
+# ALLOWED_HOSTS must be bare hostnames only (no scheme/protocol prefix).
+ALLOWED_HOSTS = env_list(
+    "ALLOWED_HOSTS",
+    default=["sentry-vision-backend.onrender.com", "localhost", "127.0.0.1"],
+)
+
+# Origins allowed to submit cross-origin POST requests (e.g. admin login, forms).
+# Must include scheme (https://) and no trailing slash.
+CSRF_TRUSTED_ORIGINS = env_list(
+    "CSRF_TRUSTED_ORIGINS",
+    default=[
+        "https://sentry-vision-backend.onrender.com",
+        "https://sentry-vision-web.vercel.app",
+    ],
+)
+
+# Render terminates HTTPS at its proxy and forwards internally as HTTP.
+# This tells Django to trust the X-Forwarded-Proto header so it correctly
+# detects HTTPS requests (needed for secure cookies / CSRF to work right).
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+>>>>>>> 270994edbe23e43edfdea19cbfbbf402fac2a6b6
 
 INSTALLED_APPS = [
     "daphne",
@@ -63,6 +92,7 @@ INSTALLED_APPS = [
     "radar.apps.RadarConfig",
     "analytics.apps.AnalyticsConfig",
     "logs.apps.LogsConfig",
+    "api",
 ]
 
 MIDDLEWARE = [

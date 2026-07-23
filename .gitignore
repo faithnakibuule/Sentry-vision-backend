@@ -17,3 +17,7 @@ venv/
 
 # Mac files
 .DS_Store
+
+media/captures/*
+media/known_faces/*
+!media/known_faces/.gitkeep
