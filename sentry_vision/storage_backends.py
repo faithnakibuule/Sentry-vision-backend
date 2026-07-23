@@ -1,3 +1,4 @@
+import concurrent.futures
 from django.core.files.storage import Storage
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -6,6 +7,11 @@ import os
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Maximum time (in seconds) to wait for ImageKit before giving up and
+# falling back to local storage. Without this, a slow/unreachable ImageKit
+# API call can hang the request forever.
+IMAGEKIT_UPLOAD_TIMEOUT = 15
 
 
 class ImageKitStorage(Storage):
@@ -37,7 +43,7 @@ class ImageKitStorage(Storage):
             return self._save_local(name, content)
 
         try:
-            # Initialize ImageKit with timeout
+            # Initialize ImageKit
             imagekit = ImageKit(
                 public_key=self.public_key,
                 private_key=self.private_key,
@@ -50,17 +56,30 @@ class ImageKitStorage(Storage):
             else:
                 file_content = content
 
-            # Upload to ImageKit with timeout protection
-            response = imagekit.upload(
-                file=file_content,
-                file_name=name,
-            )
+            # Upload to ImageKit, but never let it hang forever. We run the
+            # actual network call in a background thread and enforce a hard
+            # timeout — if ImageKit doesn't respond in time, we bail out and
+            # fall back to local storage instead of freezing the request.
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        imagekit.upload,
+                        file=file_content,
+                        file_name=name,
+                    )
+                    response = future.result(timeout=IMAGEKIT_UPLOAD_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                logger.error(
+                    f"ImageKit upload timed out after {IMAGEKIT_UPLOAD_TIMEOUT}s "
+                    f"for {name}. Falling back to local storage."
+                )
+                return self._save_local(name, content)
 
             # Return the file path stored on ImageKit
             if response and response.get("name"):
                 logger.info(f"Successfully uploaded {name} to ImageKit")
                 return response.get("name")
-            
+
             logger.warning(f"ImageKit upload returned no name for {name}")
             return name
 
@@ -95,8 +114,12 @@ class ImageKitStorage(Storage):
                 private_key=self.private_key,
                 url_endpoint=self.url_endpoint,
             )
-            imagekit.delete_file(file_id=name)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(imagekit.delete_file, file_id=name)
+                future.result(timeout=IMAGEKIT_UPLOAD_TIMEOUT)
             logger.info(f"Successfully deleted {name} from ImageKit")
+        except concurrent.futures.TimeoutError:
+            logger.warning(f"ImageKit delete timed out for {name}")
         except Exception as e:
             logger.warning(f"ImageKit delete failed for {name}: {e}")
 
