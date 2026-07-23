@@ -160,6 +160,12 @@ CORS_ALLOWED_ORIGINS = env_list(
 )
 CORS_ALLOW_CREDENTIALS = True
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://sentry-vision-backend.onrender.com",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
