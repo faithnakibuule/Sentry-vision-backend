@@ -39,13 +39,6 @@ def env_list(name, default=None):
 
 
 SECRET_KEY = env("SECRET_KEY", "dev-only-change-me")
-<<<<<<< HEAD
-DEBUG = env_bool("DEBUG", True)
-ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", 
-                         default = ["https://sentry-vision-backend.onrender.com", "192.168.8.108", "localhost", "127.0.0.1"])
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-=======
 
 # NOTE: set DEBUG=False explicitly in Render's environment variables for production.
 DEBUG = env_bool("DEBUG", False)
@@ -70,7 +63,6 @@ CSRF_TRUSTED_ORIGINS = env_list(
 # This tells Django to trust the X-Forwarded-Proto header so it correctly
 # detects HTTPS requests (needed for secure cookies / CSRF to work right).
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
->>>>>>> 270994edbe23e43edfdea19cbfbbf402fac2a6b6
 
 INSTALLED_APPS = [
     "daphne",
