@@ -1,101 +1,134 @@
 import concurrent.futures
-from django.core.files.storage import Storage
-from django.conf import settings
-from django.core.files.base import ContentFile
-from io import BytesIO
-import os
 import logging
+from io import BytesIO
+from django.core.files.storage import Storage, FileSystemStorage
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Maximum time (in seconds) to wait for ImageKit before giving up and
-# falling back to local storage. Without this, a slow/unreachable ImageKit
-# API call can hang the request forever.
-IMAGEKIT_UPLOAD_TIMEOUT = 15
+IMAGEKIT_UPLOAD_TIMEOUT = 10  # Seconds before fallback triggers
 
 
 class ImageKitStorage(Storage):
     """
     Custom storage backend for ImageKit CDN integration.
-    Handles file uploads and retrieval from ImageKit with fallback to local storage.
+    Handles file uploads and retrieval from ImageKit with fallback to local FileSystemStorage.
     """
 
     def __init__(self):
-        self.public_key = settings.IMAGEKIT_PUBLIC_KEY
-        self.private_key = settings.IMAGEKIT_PRIVATE_KEY
-        self.url_endpoint = settings.IMAGEKIT_URL_ENDPOINT
+        self.public_key = getattr(settings, "IMAGEKIT_PUBLIC_KEY", None)
+        self.private_key = getattr(settings, "IMAGEKIT_PRIVATE_KEY", None)
+        self.url_endpoint = getattr(settings, "IMAGEKIT_URL_ENDPOINT", None)
 
     def _open(self, name, mode="rb"):
-        """Open a file from ImageKit."""
         return BytesIO()
 
+    def _get_imagekit_client(self):
+        """Instantiate ImageKit client handling SDK signatures."""
+        from imagekitio import ImageKit
+
+        # Modern SDK instantiation
+        try:
+            return ImageKit(
+                private_key=self.private_key,
+                public_key=self.public_key,
+                url_endpoint=self.url_endpoint,
+            )
+        except TypeError:
+            pass
+
+        # Fallback for SDK versions taking only private_key
+        try:
+            return ImageKit(private_key=self.private_key)
+        except TypeError:
+            pass
+
+        # Positional fallback
+        return ImageKit(self.private_key, self.public_key, self.url_endpoint)
+
     def _save(self, name, content):
-        """Save a file to ImageKit with fallback to local storage."""
-        # Validate ImageKit configuration
+        """Save a file to ImageKit with fallback to local disk storage."""
         if not all([self.public_key, self.private_key, self.url_endpoint]):
-            logger.warning("ImageKit credentials not fully configured. Falling back to local storage.")
+            logger.warning("ImageKit credentials incomplete. Falling back to local storage.")
             return self._save_local(name, content)
 
         try:
             from imagekitio import ImageKit
         except ImportError:
-            logger.warning("imagekitio package not available. Using local storage.")
+            logger.warning("imagekitio package not installed. Using local storage.")
             return self._save_local(name, content)
 
-        try:
-            # Initialize ImageKit
-            imagekit = ImageKit(
-                public_key=self.public_key,
-                private_key=self.private_key,
-                url_endpoint=self.url_endpoint,
-            )
-
-            # Read file content
-            if hasattr(content, "read"):
-                file_content = content.read()
-            else:
-                file_content = content
-
-            # Upload to ImageKit, but never let it hang forever. We run the
-            # actual network call in a background thread and enforce a hard
-            # timeout — if ImageKit doesn't respond in time, we bail out and
-            # fall back to local storage instead of freezing the request.
-            try:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(
-                        imagekit.upload,
-                        file=file_content,
-                        file_name=name,
-                    )
-                    response = future.result(timeout=IMAGEKIT_UPLOAD_TIMEOUT)
-            except concurrent.futures.TimeoutError:
-                logger.error(
-                    f"ImageKit upload timed out after {IMAGEKIT_UPLOAD_TIMEOUT}s "
-                    f"for {name}. Falling back to local storage."
-                )
-                return self._save_local(name, content)
-
-            # Return the file path stored on ImageKit
-            if response and response.get("name"):
-                logger.info(f"Successfully uploaded {name} to ImageKit")
-                return response.get("name")
-
-            logger.warning(f"ImageKit upload returned no name for {name}")
-            return name
-
-        except Exception as e:
-            logger.error(f"ImageKit upload failed for {name}: {e}. Falling back to local storage.")
-            return self._save_local(name, content)
-
-    def _save_local(self, name, content):
-        """Fallback method to save file locally."""
-        from django.core.files.storage import default_storage
+        # Extract raw bytes safely
         try:
             if hasattr(content, "read"):
                 content.seek(0)
-            return default_storage.save(name, content)
+                file_content = content.read()
+            else:
+                file_content = content
         except Exception as e:
-            logger.error(f"Local storage fallback also failed: {e}")
+            logger.error(f"Error reading file stream for {name}: {e}")
+            return self._save_local(name, content)
+
+        try:
+            imagekit = self._get_imagekit_client()
+
+            def do_upload():
+                # 1. Modern SDK: imagekit.files.upload(...)
+                if hasattr(imagekit, "files") and hasattr(imagekit.files, "upload"):
+                    res = imagekit.files.upload(
+                        file=file_content,
+                        file_name=name,
+                    )
+                # 2. Legacy SDK v2: imagekit.upload_file(...)
+                elif hasattr(imagekit, "upload_file"):
+                    res = imagekit.upload_file(
+                        file=file_content,
+                        file_name=name,
+                    )
+                # 3. Legacy SDK v1: imagekit.upload(...)
+                elif hasattr(imagekit, "upload"):
+                    res = imagekit.upload(
+                        options={
+                            "file": file_content,
+                            "file_name": name,
+                        }
+                    )
+                else:
+                    raise AttributeError("Could not locate valid upload method on ImageKit client.")
+
+                # Extract file identifier/name safely from Response / Object / Dict
+                if isinstance(res, dict):
+                    return res.get("name") or res.get("filePath") or res.get("file_id") or name
+                
+                return getattr(res, "name", getattr(res, "file_path", getattr(res, "file_id", name)))
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(do_upload)
+                uploaded_name = future.result(timeout=IMAGEKIT_UPLOAD_TIMEOUT)
+
+            logger.info(f"✅ Successfully uploaded {name} to ImageKit")
+            return str(uploaded_name)
+
+        except concurrent.futures.TimeoutError:
+            logger.error(
+                f"⏰ ImageKit upload timed out after {IMAGEKIT_UPLOAD_TIMEOUT}s for {name}. "
+                f"Falling back to local storage."
+            )
+            return self._save_local(name, content)
+
+        except Exception as e:
+            logger.error(f"❌ ImageKit upload failed for {name}: {e}. Falling back to local storage.")
+            return self._save_local(name, content)
+
+    def _save_local(self, name, content):
+        """Fallback method using FileSystemStorage directly."""
+        try:
+            local_storage = FileSystemStorage()
+            if hasattr(content, "seek"):
+                content.seek(0)
+            return local_storage.save(name, content)
+        except Exception as e:
+            logger.error(f"Local storage fallback failed for {name}: {e}")
             return name
 
     def delete(self, name):
@@ -104,59 +137,32 @@ class ImageKitStorage(Storage):
             return
 
         try:
-            from imagekitio import ImageKit
-        except ImportError:
-            return
+            imagekit = self._get_imagekit_client()
+            delete_func = None
+            
+            if hasattr(imagekit, "files") and hasattr(imagekit.files, "delete"):
+                delete_func = lambda: imagekit.files.delete(file_id=name)
+            elif hasattr(imagekit, "delete_file"):
+                delete_func = lambda: imagekit.delete_file(file_id=name)
 
-        try:
-            imagekit = ImageKit(
-                public_key=self.public_key,
-                private_key=self.private_key,
-                url_endpoint=self.url_endpoint,
-            )
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(imagekit.delete_file, file_id=name)
-                future.result(timeout=IMAGEKIT_UPLOAD_TIMEOUT)
-            logger.info(f"Successfully deleted {name} from ImageKit")
-        except concurrent.futures.TimeoutError:
-            logger.warning(f"ImageKit delete timed out for {name}")
+            if delete_func:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(delete_func)
+                    future.result(timeout=IMAGEKIT_UPLOAD_TIMEOUT)
+                logger.info(f"Successfully deleted {name} from ImageKit")
         except Exception as e:
-            logger.warning(f"ImageKit delete failed for {name}: {e}")
+            logger.warning(f"ImageKit delete skipped/failed for {name}: {e}")
 
     def exists(self, name):
-        """Check if a file exists on ImageKit."""
-        if not name:
-            return False
-        return True
-
-    def listdir(self, path):
-        """List files in a directory on ImageKit."""
-        return [], []
-
-    def size(self, name):
-        """Return the size of a file."""
-        return 0
+        return False
 
     def url(self, name):
-        """Return the URL for accessing a file on ImageKit."""
+        """Return the URL for accessing a file."""
         if not name:
             return ""
-        # Construct ImageKit URL
+        if name.startswith("http://") or name.startswith("https://"):
+            return name
         if self.url_endpoint:
-            return f"{self.url_endpoint}/{name}"
+            endpoint = self.url_endpoint.rstrip("/")
+            return f"{endpoint}/{name.lstrip('/')}"
         return f"/media/{name}"
-
-    def get_accessed_time(self, name):
-        """Return the last accessed time."""
-        from datetime import datetime
-        return datetime.now()
-
-    def get_created_time(self, name):
-        """Return the creation time."""
-        from datetime import datetime
-        return datetime.now()
-
-    def get_modified_time(self, name):
-        """Return the last modified time."""
-        from datetime import datetime
-        return datetime.now()

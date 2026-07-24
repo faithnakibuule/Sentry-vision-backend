@@ -1,8 +1,49 @@
 import logging
-
 from django.db import models
 
 logger = logging.getLogger(__name__)
+
+
+def _encode_with_timeout(photo):
+    """
+    Directly runs get_face_encoding() with robust file stream resets
+    for ImageKit, Cloudinary, or S3 backends without threading deadlocks.
+    """
+    from .services import get_face_encoding
+
+    try:
+        # 1. Reset stream pointer before reading image bytes
+        if hasattr(photo, "file") and hasattr(photo.file, "seek"):
+            try:
+                photo.file.seek(0)
+            except Exception:
+                pass
+        elif hasattr(photo, "seek"):
+            try:
+                photo.seek(0)
+            except Exception:
+                pass
+
+        # 2. Run face detection directly on the main thread
+        result = get_face_encoding(photo)
+
+        # 3. Reset stream pointer so Django/ImageKit can upload the file
+        if hasattr(photo, "file") and hasattr(photo.file, "seek"):
+            try:
+                photo.file.seek(0)
+            except Exception:
+                pass
+        elif hasattr(photo, "seek"):
+            try:
+                photo.seek(0)
+            except Exception:
+                pass
+
+        return result
+
+    except Exception:
+        logger.exception("Face encoding failed for photo %s", getattr(photo, "name", photo))
+        return None
 
 
 class PersonOfInterest(models.Model):
@@ -12,7 +53,6 @@ class PersonOfInterest(models.Model):
         HIGH = "high", "High"
 
     full_name = models.CharField(max_length=255)
-    # Primary / Default profile photo
     photo = models.ImageField(upload_to="persons/%Y/%m/")
     face_encoding = models.JSONField(null=True, blank=True)
     threat_level = models.CharField(
@@ -31,12 +71,6 @@ class PersonOfInterest(models.Model):
         return self.full_name
 
     def _photo_changed(self):
-        """
-        Returns True if this is a new instance, or if the photo field
-        has changed compared to what's currently stored in the database.
-        Wrapped in try/except so a storage-backend hiccup here can never
-        block the save.
-        """
         if self.pk is None:
             return True
         try:
@@ -44,20 +78,14 @@ class PersonOfInterest(models.Model):
             return bool(old and old.photo.name != self.photo.name)
         except Exception:
             logger.exception("Failed to check if photo changed for %s", self.pk)
-            # If we can't tell, err on the side of NOT re-encoding, since
-            # this comparison firing on every save is what risks a hang.
             return False
 
     def save(self, *args, **kwargs):
         if self._photo_changed() and self.photo:
-            from .services import get_face_encoding
-
-            try:
-                encoding = get_face_encoding(self.photo)
-                self.face_encoding = encoding.tolist() if encoding is not None else None
-            except Exception:
-                # Never let a face-encoding failure block saving the record.
-                logger.exception("Face encoding failed for PersonOfInterest %s", self.pk)
+            encoding = _encode_with_timeout(self.photo)
+            if encoding is not None:
+                self.face_encoding = encoding.tolist() if hasattr(encoding, "tolist") else encoding
+            else:
                 self.face_encoding = None
         super().save(*args, **kwargs)
 
@@ -95,14 +123,10 @@ class PersonImage(models.Model):
             return False
 
     def save(self, *args, **kwargs):
-        # Automatically generate face encoding for each additional angled shot
         if self._photo_changed() and self.photo:
-            from .services import get_face_encoding
-
-            try:
-                encoding = get_face_encoding(self.photo)
-                self.face_encoding = encoding.tolist() if encoding is not None else None
-            except Exception:
-                logger.exception("Face encoding failed for PersonImage %s", self.pk)
+            encoding = _encode_with_timeout(self.photo)
+            if encoding is not None:
+                self.face_encoding = encoding.tolist() if hasattr(encoding, "tolist") else encoding
+            else:
                 self.face_encoding = None
         super().save(*args, **kwargs)
