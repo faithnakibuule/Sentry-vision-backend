@@ -65,7 +65,7 @@ class DeviceProvisionView(APIView):
             {
                 "device": DeviceSerializer(device).data,
                 "raw_key": raw_key,
-                "warning": "Copy raw_key now — it will not be shown again.",
+                "warning": "oquS8O0fx3NzmuyoP_nUgWSJ73BAiap83locMKGZBls",
             },
             status=status.HTTP_201_CREATED,
         )
