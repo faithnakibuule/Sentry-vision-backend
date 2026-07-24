@@ -1,17 +1,154 @@
 import datetime
+import logging
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db import transaction
 from rest_framework import mixins, viewsets, status
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 # Preserving your exact architectural imports
 from accounts.permissions import IsAdminOrReadOnlyRole
 from devices.authentication import DeviceAPIKeyAuthentication
 from devices.permissions import IsDeviceRequest
 
-from .models import DetectionEvent
+from alerts.models import Alert
+from persons.models import PersonOfInterest
+from persons.services import compare_encoding, get_face_encoding
+
+from .models import DetectionEvent, FacialMatchResult
 from .serializers import DetectionEventSerializer
+
+
+logger = logging.getLogger(__name__)
+
+
+class CameraRecognitionView(APIView):
+    """Accept one ESP32-CAM JPEG and return its face-match result synchronously."""
+
+    authentication_classes = [DeviceAPIKeyAuthentication]
+    permission_classes = [IsDeviceRequest]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        # ``image`` is the supported firmware field. ``imageFile`` is accepted
+        # temporarily so deployed devices using the old snapshot endpoint can be
+        # migrated without a flag day.
+        image_file = request.FILES.get("image") or request.FILES.get("imageFile")
+        if image_file is None:
+            return Response(
+                {"status": "failed", "error": "Multipart field 'image' is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if image_file.content_type and not image_file.content_type.startswith("image/"):
+            return Response(
+                {"status": "failed", "error": "The image field must contain an image."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        device = request.auth.device
+        camera_id = request.headers.get("X-Camera-ID") or request.data.get("device_id")
+        if camera_id and camera_id != device.device_id:
+            return Response(
+                {"status": "failed", "error": "Camera ID does not match the device API key."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        trigger_source = request.data.get("trigger_source", DetectionEvent.TriggerSource.MOTION)
+        if trigger_source not in DetectionEvent.TriggerSource.values:
+            return Response(
+                {"status": "failed", "error": "Invalid trigger_source."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Saving first gives the event an audit trail even when no face is found.
+        detection = DetectionEvent.objects.create(
+            device=device,
+            zone=device.zone,
+            image=image_file,
+            trigger_source=trigger_source,
+        )
+        result = FacialMatchResult.objects.create(detection=detection)
+
+        try:
+            encoding = get_face_encoding(detection.image)
+            if encoding is None:
+                result.status = FacialMatchResult.Status.UNMATCHED
+                result.error_message = "No face detected in image."
+                result.save(update_fields=["status", "error_message", "updated_at"])
+                detection.processing_status = DetectionEvent.ProcessingStatus.PROCESSED
+                detection.save(update_fields=["processing_status"])
+                return self._response(detection, result, status.HTTP_201_CREATED)
+
+            person, confidence, distance = compare_encoding(
+                encoding,
+                PersonOfInterest.objects.exclude(face_encoding__isnull=True),
+                settings.FACE_MATCH_TOLERANCE,
+            )
+
+            with transaction.atomic():
+                result.person = person
+                result.confidence_score = confidence
+                result.face_distance = distance
+                result.status = (
+                    FacialMatchResult.Status.MATCHED if person else FacialMatchResult.Status.UNMATCHED
+                )
+                result.error_message = "" if distance is not None else "No enrolled face encodings are available."
+                result.save()
+
+                detection.processing_status = DetectionEvent.ProcessingStatus.PROCESSED
+                detection.save(update_fields=["processing_status"])
+
+                if person:
+                    Alert.objects.create(
+                        detection=detection,
+                        match_result=result,
+                        person=person,
+                        source=Alert.Source.FACIAL_MATCH,
+                        severity={
+                            "low": Alert.Severity.LOW,
+                            "medium": Alert.Severity.HIGH,
+                            "high": Alert.Severity.CRITICAL,
+                        }.get(person.threat_level, Alert.Severity.MEDIUM),
+                        message=f"Facial match detected for {person.full_name}.",
+                    )
+            return self._response(detection, result, status.HTTP_201_CREATED)
+        except Exception:
+            logger.exception("Facial recognition failed for camera detection %s", detection.id)
+            result.status = FacialMatchResult.Status.FAILED
+            result.error_message = "Facial recognition processing failed."
+            result.save(update_fields=["status", "error_message", "updated_at"])
+            detection.processing_status = DetectionEvent.ProcessingStatus.FAILED
+            detection.save(update_fields=["processing_status"])
+            return self._response(detection, result, status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @staticmethod
+    def _response(detection, result, response_status):
+        person = result.person
+        return Response(
+            {
+                "status": result.status,
+                "matched": result.status == FacialMatchResult.Status.MATCHED,
+                "detection_id": detection.id,
+                "camera_id": detection.device.device_id,
+                "subject": (
+                    {
+                        "id": person.id,
+                        "name": person.full_name,
+                        "threat_level": person.threat_level,
+                    }
+                    if person
+                    else None
+                ),
+                "confidence": result.confidence_score,
+                "face_distance": result.face_distance,
+                "error": result.error_message or None,
+            },
+            status=response_status,
+        )
 
 # Optional real-time updates (Uncomment if using Django Channels)
 # from asgiref.sync import async_to_sync

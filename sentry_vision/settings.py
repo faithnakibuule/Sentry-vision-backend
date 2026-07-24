@@ -1,7 +1,7 @@
 import os
 from datetime import timedelta
 from pathlib import Path
-import dj_database_url
+import dj_database_url 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -39,11 +39,15 @@ def env_list(name, default=None):
 
 
 SECRET_KEY = env("SECRET_KEY", "dev-only-change-me")
+
 DEBUG = env_bool("DEBUG", True)
-ALLOWED_HOSTS = env_list("ALLOWED_HOSTS", 
-                         default = ["https://sentry-vision-backend.onrender.com", "localhost", "127.0.0.1"])
+
+ALLOWED_HOSTS = [    "*",  ]
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+CORS_ALLOW_ALL_ORIGINS = True
 
 INSTALLED_APPS = [
     "daphne",
