@@ -4,7 +4,7 @@ from pathlib import Path
 import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+ESP32_API_KEY = os.environ.get("ESP32_API_KEY", "")
 
 def load_dotenv(path):
     if not path.exists():
@@ -39,38 +39,21 @@ def env_list(name, default=None):
 
 
 SECRET_KEY = env("SECRET_KEY", "dev-only-change-me")
-
-# NOTE: set DEBUG=False explicitly in Render's environment variables for production.
-DEBUG = env_bool("DEBUG", False)
-
-# ALLOWED_HOSTS must be bare hostnames only (no scheme/protocol prefix).
+DEBUG = env_bool("DEBUG", False
+                 )
 ALLOWED_HOSTS = env_list(
     "ALLOWED_HOSTS",
     default=[
-        "sentry-vision-backend.onrender.com",
-        "192.168.8.108",
-        "localhost",
-        "127.0.0.1",
+        # "https://sentry-vision-backend.onrender.com",
+        # "192.168.8.108",
+        # "10.90.190.71",
+        # "localhost",
+        # "127.0.0.1",
+        "*",
     ],
 )
-
-# Origins allowed to submit cross-origin POST requests (e.g. admin login, forms).
-# Must include scheme (https://) and no trailing slash.
-CSRF_TRUSTED_ORIGINS = env_list(
-    "CSRF_TRUSTED_ORIGINS",
-    default=[
-        "https://sentry-vision-backend.onrender.com",
-        "https://sentry-vision-web.vercel.app",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ],
-)
-
-# Render terminates HTTPS at its proxy and forwards internally as HTTP.
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.path.join (BASE_DIR, "media")
 
 INSTALLED_APPS = [
     "daphne",
@@ -127,16 +110,13 @@ TEMPLATES = [
     },
 ]
 
-
 DATABASE_URL = env("DATABASE_URL")
 
 if DATABASE_URL:
     # Production: Uses the DATABASE_URL provided by Render / Railway
     DATABASES = {
         "default": dj_database_url.config(
-            default=DATABASE_URL,
-            conn_max_age=600,
-            ssl_require=True
+            default=DATABASE_URL, conn_max_age=600, ssl_require=True
         )
     }
 elif env("DB_ENGINE"):
@@ -161,7 +141,9 @@ else:
     }
 
 AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"
+    },
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
@@ -173,23 +155,23 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"  
-MEDIA_ROOT = BASE_DIR / "media"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 CORS_ALLOWED_ORIGINS = env_list(
     "CORS_ALLOWED_ORIGINS",
     [
-        os.environ.get('FRONTEND_URL','http://localhost:5173'),
+        os.environ.get("FRONTEND_URL", "http://localhost:5173"),
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://10.90.190.71: 5173",
         "https://sentry-vision-web.vercel.app",
     ],
+
 )
 CORS_ALLOW_CREDENTIALS = True
-
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -207,7 +189,9 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(env("JWT_ACCESS_MINUTES", 30))),
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=int(env("JWT_ACCESS_MINUTES", 30))
+    ),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=int(env("JWT_REFRESH_DAYS", 7))),
 }
 

@@ -66,3 +66,30 @@ class DeviceAPIKey(models.Model):
 
     def matches(self, raw_key):
         return check_password(raw_key, self.key_hash)
+
+
+class DeviceStatus(models.Model):
+    """
+    Tracks sensor readings or sub-device statuses.
+    Linked to a parent registered Device.
+    """
+    class SensorType(models.TextChoices):
+        ULTRASONIC = "ultrasonic", "Ultrasonic Sensor"
+        RCWL_MOTION = "rcwl_motion", "RCWL Motion Sensor"
+        SERVO_1 = "servo_1", "Servo Motor 1 (180°)"
+        SERVO_2 = "servo_2", "Servo Motor 2 (180°)"
+        ESP32_CAM = "esp32_cam", "ESP32-CAM"
+
+    device = models.ForeignKey(Device, related_name="statuses", on_delete=models.CASCADE)
+    sensor_type = models.CharField(max_length=32, choices=SensorType.choices)
+    last_seen = models.DateTimeField(auto_now=True)
+    
+    # Free-form JSON payload (e.g., {"distance_cm": 34.2})
+    payload = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        verbose_name_plural = "Device statuses"
+        unique_together = ("device", "sensor_type")
+
+    def __str__(self):
+        return f"{self.device.device_id} [{self.sensor_type}] @ {self.last_seen}"

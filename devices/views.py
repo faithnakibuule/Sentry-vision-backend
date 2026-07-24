@@ -3,12 +3,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import IsAdminOrReadOnlyRole, IsAdminRole
+from alerts.broadcast import broadcast_alert_event
 
 from .authentication import DeviceAPIKeyAuthentication
-from .models import Device, DeviceAPIKey
+from .models import Device, DeviceAPIKey, DeviceStatus
 from .permissions import IsDeviceRequest
-from .serializers import DeviceHeartbeatSerializer, DeviceSerializer
-from alerts.broadcast import broadcast_alert_event
+from .serializers import (
+    DeviceHeartbeatSerializer,
+    DeviceSerializer,
+    DeviceStatusSerializer,
+)
 
 
 class DeviceViewSet(viewsets.ModelViewSet):
@@ -16,8 +20,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrReadOnlyRole]
 
     def get_queryset(self):
-        from .models import Device
-
         return Device.objects.all()
 
 
@@ -45,11 +47,16 @@ class DeviceProvisionView(APIView):
     def post(self, request):
         device_id = request.data.get("device_id")
         if not device_id:
-            return Response({"error": "device_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"error": "device_id is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if Device.objects.filter(device_id=device_id).exists():
             return Response(
-                {"error": f"Device '{device_id}' already exists. Use a different device_id."},
+                {
+                    "error": f"Device '{device_id}' already exists. Use a different device_id."
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -72,13 +79,53 @@ class DeviceProvisionView(APIView):
 
 
 class DeviceHeartbeatView(APIView):
+    """Authenticated heartbeat endpoint for primary registered devices."""
+
     authentication_classes = [DeviceAPIKeyAuthentication]
     permission_classes = [IsDeviceRequest]
 
     def post(self, request):
-        serializer = DeviceHeartbeatSerializer(data=request.data, context={"request": request})
+        serializer = DeviceHeartbeatSerializer(
+            data=request.data, context={"request": request}
+        )
         serializer.is_valid(raise_exception=True)
         device = serializer.save()
         payload = DeviceSerializer(device).data
         broadcast_alert_event("device.heartbeat", payload)
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class DeviceStatusHeartbeatView(APIView):
+    """ESP32 POSTs here on every sub-device / sensor read cycle."""
+
+    authentication_classes = [DeviceAPIKeyAuthentication]
+    permission_classes = [IsDeviceRequest]
+
+    def post(self, request):
+        device = request.auth.device  # ⚠️ confirm this attribute — see note below
+        sensor_type = request.data.get("device_id")  # e.g. "ultrasonic", "servo_1"
+        payload = request.data.get("payload", {})
+
+        valid_choices = dict(DeviceStatus.SensorType.choices)
+        if sensor_type not in valid_choices:
+            return Response(
+                {"error": f"unknown sensor_type '{sensor_type}'"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        obj, _ = DeviceStatus.objects.update_or_create(
+            device=device,
+            sensor_type=sensor_type,
+            defaults={"payload": payload},
+        )
+        return Response(DeviceStatusSerializer(obj).data, status=status.HTTP_200_OK)
+    
+class DeviceHealthListView(APIView):
+    """Frontend polls here to render the device health panel."""
+
+    permission_classes = [IsAdminOrReadOnlyRole]
+
+    def get(self, request):
+        qs = DeviceStatus.objects.all()
+        data = DeviceStatusSerializer(qs, many=True).data
+        return Response(data, status=status.HTTP_200_OK)

@@ -1,6 +1,10 @@
+from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Device
+from .models import Device, DeviceStatus
+
+# Heartbeat timeout threshold for individual sub-devices/sensors
+ACTIVE_THRESHOLD_SECONDS = 15  # tune to your ESP32 heartbeat interval
 
 
 class DeviceSerializer(serializers.ModelSerializer):
@@ -27,7 +31,9 @@ class DeviceSerializer(serializers.ModelSerializer):
 
 class DeviceHeartbeatSerializer(serializers.Serializer):
     device_id = serializers.CharField(required=False)
-    sd_card_usage_pct = serializers.DecimalField(max_digits=5, decimal_places=2, required=False)
+    sd_card_usage_pct = serializers.DecimalField(
+        max_digits=5, decimal_places=2, required=False
+    )
     firmware_version = serializers.CharField(required=False, allow_blank=True)
     ip_address = serializers.IPAddressField(required=False)
     is_online = serializers.BooleanField(required=False, default=True)
@@ -35,7 +41,9 @@ class DeviceHeartbeatSerializer(serializers.Serializer):
     def validate_device_id(self, value):
         api_key = self.context["request"].auth
         if value and value != api_key.device.device_id:
-            raise serializers.ValidationError("device_id does not match the API key device.")
+            raise serializers.ValidationError(
+                "device_id does not match the API key device."
+            )
         return value
 
     def save(self):
@@ -44,8 +52,6 @@ class DeviceHeartbeatSerializer(serializers.Serializer):
             if field in self.validated_data:
                 setattr(device, field, self.validated_data[field])
         device.is_online = self.validated_data.get("is_online", True)
-        from django.utils import timezone
-
         device.last_seen = timezone.now()
         device.save(
             update_fields=[
@@ -58,3 +64,17 @@ class DeviceHeartbeatSerializer(serializers.Serializer):
             ]
         )
         return device
+
+
+class DeviceStatusSerializer(serializers.ModelSerializer):
+    is_active = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeviceStatus
+        fields = ["device_id", "last_seen", "payload", "is_active"]
+        read_only_fields = ["last_seen", "is_active"]
+
+    def get_is_active(self, obj):
+        if not obj.last_seen:
+            return False
+        return (timezone.now() - obj.last_seen).total_seconds() < ACTIVE_THRESHOLD_SECONDS
