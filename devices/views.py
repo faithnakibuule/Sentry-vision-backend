@@ -29,3 +29,7 @@ class DeviceHeartbeatView(APIView):
         payload = DeviceSerializer(device).data
         broadcast_alert_event("device.heartbeat", payload)
         return Response(payload, status=status.HTTP_200_OK)
+        device = serializer.save()
+        payload = DeviceSerializer(device).data
+        broadcast_alert_event("device.heartbeat", payload)
+        return Response(payload, status=status.HTTP_200_OK)
