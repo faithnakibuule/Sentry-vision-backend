@@ -2,11 +2,16 @@ from rest_framework import status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+<<<<<<< HEAD
 from accounts.permissions import IsAdminOrReadOnlyRole, IsAdminRole
 from alerts.broadcast import broadcast_alert_event
 
 from .authentication import DeviceAPIKeyAuthentication
 from .models import Device, DeviceAPIKey, DeviceStatus
+=======
+from accounts.permissions import IsAdminOrReadOnlyRole
+from .authentication import DeviceAPIKeyAuthentication
+>>>>>>> 20d2b0cc7b4871c9d2fb33d035a68337f0305177
 from .permissions import IsDeviceRequest
 from .serializers import (
     DeviceHeartbeatSerializer,
@@ -20,6 +25,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdminOrReadOnlyRole]
 
     def get_queryset(self):
+<<<<<<< HEAD
         return Device.objects.all()
 
 
@@ -78,6 +84,12 @@ class DeviceProvisionView(APIView):
         )
 
 
+=======
+        from .models import Device
+        return Device.objects.all()
+
+
+>>>>>>> 20d2b0cc7b4871c9d2fb33d035a68337f0305177
 class DeviceHeartbeatView(APIView):
     """Authenticated heartbeat endpoint for primary registered devices."""
 
@@ -93,6 +105,7 @@ class DeviceHeartbeatView(APIView):
         payload = DeviceSerializer(device).data
         broadcast_alert_event("device.heartbeat", payload)
         return Response(payload, status=status.HTTP_200_OK)
+<<<<<<< HEAD
 
 
 class DeviceStatusHeartbeatView(APIView):
@@ -129,3 +142,9 @@ class DeviceHealthListView(APIView):
         qs = DeviceStatus.objects.all()
         data = DeviceStatusSerializer(qs, many=True).data
         return Response(data, status=status.HTTP_200_OK)
+=======
+        device = serializer.save()
+        payload = DeviceSerializer(device).data
+        broadcast_alert_event("device.heartbeat", payload)
+        return Response(payload, status=status.HTTP_200_OK)
+>>>>>>> 20d2b0cc7b4871c9d2fb33d035a68337f0305177
