@@ -4,6 +4,12 @@ from django.http import StreamingHttpResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_GET
 from .models import SecuritySnapshot
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import AllowAny
+from .models import TelemetryData
+
 
 # Thread-safe global memory buffer for live streaming frames
 LATEST_FRAME = None
@@ -112,3 +118,30 @@ def snapshot_list_api(request):
         for s in snapshots
     ]
     return JsonResponse({"snapshots": data}, status=200)
+
+class TelemetryAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        # 1. Validate the API Key sent by the ESP32
+        client_api_key = request.headers.get('X-API-Key')
+        expected_api_key = "oquS8O0fx3NzmuyoP_nUgWSJ73BAiap83locMKGZBls" # Or use settings.ESP32_API_Key
+
+        if client_api_key != expected_api_key:
+            return Response({"error": "Unauthorized: Invalid API Key"}, status=status.HTTP_403_FORBIDDEN)
+
+        # 2. Extract data sent by ESP32
+        motion = request.data.get('motion')
+        distance = request.data.get('distance')
+        alarm = request.data.get('alarm')
+        servo_angle = request.data.get('servo_angle')
+
+        # 3. Save to your database model
+        # TelemetryData.objects.create(
+        #     motion=motion,
+        #     distance=distance,
+        #     alarm=alarm,
+        #     servo_angle=servo_angle
+        # )
+        
+        return Response({"status": "success", "message": "Telemetry received"}, status=status.HTTP_201_CREATED)

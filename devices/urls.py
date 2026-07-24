@@ -10,8 +10,8 @@ urlpatterns = [
     path("devices/heartbeat/", DeviceHeartbeatView.as_view(), name="device-heartbeat"),
     path("devices/provision/", DeviceProvisionView.as_view(), name="device-provision"),
     
-    # Changed from 'api/telemetry/' to 'telemetry/'
-    path("telemetry/", telemetry_view, name="telemetry"), 
+    # Clean route (Main project urls.py provides the leading "api/")
+    path("telemetry/", telemetry_view, name="telemetry"),
     
     *router.urls,
 ]
